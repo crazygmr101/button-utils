@@ -32,7 +32,7 @@ After the paginator is done, you can access the page it left off on with `pagina
 ```python
 from discord.ext import commands
 
-from src.dpy_button_utils.confirmation import ButtonConfirmation
+from dpy_button_utils.confirmation import ButtonConfirmation
 
 bot = commands.Bot(command_prefix="!", help_command=None)
 
