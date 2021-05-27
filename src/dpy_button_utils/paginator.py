@@ -14,11 +14,11 @@ class ButtonPaginator:
                  embeds: List[discord.Embed] = None, timeout: int = 60):
         if embeds and messages:
             raise ValueError("You can only pass either messages or embeds")
-        self.embeds = embeds
+        self._embeds = embeds
         self.messages = messages
         self.timeout = timeout
-        if self.embeds:
-            self.responses = [{"embed": embed.to_dict()} for embed in self.embeds]
+        if self._embeds:
+            self.responses = [{"embed": embed.to_dict()} for embed in self._embeds]
         else:
             self.responses = [{"content": content} for content in self.messages]
         self.buttons = {
@@ -34,25 +34,25 @@ class ButtonPaginator:
                                  {"type": 2, "label": v[0], "custom_id": k, "style": 4 if k == "stop" else 2}
                                  for k, v in self.buttons.items()
                              ]}]})
-        self.http = _bot.http
-        self.bot = _bot
+        self._http = _bot.http
+        self._bot = _bot
+        self.counter = 0
 
     async def run(self, ctx: commands.Context):
-        msg = (await self.http.request(
+        msg = (await self._http.request(
             ButtonPaginator._CustomRoute("POST", f"/channels/{ctx.channel.id}/messages"),
             json=self.responses[0]
         ))["id"]
-        counter = 0
 
         while True:
             try:
-                event = await self.bot.wait_for("socket_response", timeout=self.timeout,
-                                                check=lambda e: (
+                event = await self._bot.wait_for("socket_response", timeout=self.timeout,
+                                                 check=lambda e: (
                                                         e["t"] == "INTERACTION_CREATE" and
                                                         e["d"].get("message", {}).get("id", None) == msg and
                                                         "custom_id" in e["d"].get("data", {})
                                                 ))
-                await self.http.request(
+                await self._http.request(
                     ButtonPaginator._CustomRoute("POST",
                                                  f"/interactions/{event['d']['id']}/{event['d']['token']}/callback"),
                     json={"type": 6})
@@ -64,14 +64,14 @@ class ButtonPaginator:
             message_edit = ButtonPaginator._CustomRoute("PATCH", f"/channels/{ctx.channel.id}/messages/{msg}")
 
             if button_clicked != "stop":
-                counter = self.buttons[button_clicked][1](counter)
+                self.counter = self.buttons[button_clicked][1](self.counter)
 
-            current_response = self.responses[counter]
+            current_response = self.responses[self.counter]
 
             if button_clicked == "stop":
                 current_response["components"] = {}
 
-            await self.http.request(message_edit, json=current_response)
+            await self._http.request(message_edit, json=current_response)
 
             if button_clicked == "stop":
                 break
