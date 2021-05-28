@@ -1,9 +1,11 @@
 import asyncio
 
+import discord
 from discord.http import Route
 from discord.ext import commands
 
 from .models import ActionRow, Button, ButtonStyle
+
 
 class ButtonConfirmation:
     class _CustomRoute(Route):
@@ -33,14 +35,13 @@ class ButtonConfirmation:
             ButtonConfirmation._CustomRoute("POST", f"/channels/{self.ctx.channel.id}/messages"),
             json={
                 "content": self.message,
+                "allowed_mentions": discord.AllowedMentions.none().to_dict(),
                 "components": [
-                  ActionRow(
-                      components=[
-                          Button(label=self.confirm, custom_id="confirm",
-                                 style=ButtonStyle.danger if self.destructive else ButtonStyle.primary),
-                          Button(label=self.cancel, custom_id="cancel", style=ButtonStyle.secondary)
-                      ]
-                  ).to_dict()
+                    ActionRow(
+                        Button(label=self.confirm, custom_id="confirm",
+                               style=ButtonStyle.danger if self.destructive else ButtonStyle.primary),
+                        Button(label=self.cancel, custom_id="cancel", style=ButtonStyle.secondary)
+                    ).to_dict()
                 ]}
         ))["id"]
 

@@ -16,7 +16,7 @@ class InteractionComponent(ABC):
 
 @dataclass
 class ActionRow(InteractionComponent):
-    def __init__(self, components: List[InteractionComponent]):
+    def __init__(self, *components: InteractionComponent):
         self.components = components
 
     component_type: int = 1
@@ -44,7 +44,7 @@ class Button(InteractionComponent):
                 self.style = ButtonStyle.link
         if self.style != ButtonStyle.link and not self.custom_id:
             raise ValueError("Non-link buttons must have a custom_id")
-        if not re.match(r"[\w-]{1,100}", custom_id):
+        if custom_id and not re.match(r"[\w-]{1,100}", custom_id):
             raise ValueError(r"custom_id must match [\w-]{1,100}")
         if not re.match(r".{1,80}", label):
             raise ValueError(r"label must match .{1,100}")
