@@ -108,8 +108,8 @@ class ButtonPaginator:
         for chunk in split:
             if len(current) + len(chunk) > max_chars:
                 if len(current) < min_chars:
-                    content_list.append(current + splitter + chunk[:min_chars-len(current)])
-                    current = chunk[min_chars-len(current):]
+                    content_list.append(current + splitter + chunk[:min_chars - len(current)])
+                    current = chunk[min_chars - len(current):]
                 else:
                     content_list.append(current)
                     current = chunk
@@ -121,6 +121,6 @@ class ButtonPaginator:
             fmt.format(
                 content=page,
                 current_page=n,
-                current_page_plus_one=n+1,
+                current_page_plus_one=n + 1,
                 total_pages=len(content_list))
             for n, page in enumerate(content_list)], timeout=timeout)

@@ -13,6 +13,13 @@ class ButtonMultipleChoice:
 
     def __init__(self, ctx: commands.Context, content: str, *components: InteractionComponent,
                  timeout: int = 60):
+        """
+
+        :param ctx: The :class:`discord.ext.commands.Context` for the command
+        :param content:
+        :param components:
+        :param timeout:
+        """
         self.components = components
         self.ctx = ctx
         self._bot = ctx.bot
