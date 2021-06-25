@@ -1,83 +1,52 @@
 from __future__ import annotations
 
 import asyncio
-from typing import List
+from typing import List, Union
 
 import discord
+from discord import ui
 from discord.ext import commands
-from discord.http import Route
 
 
 class ButtonPaginator:
-    class _CustomRoute(Route):
-        BASE = "https://discord.com/api/v9"
-
     def __init__(self, _ctx: commands.Context, *, messages: List[str] = None,
                  embeds: List[discord.Embed] = None, timeout: int = 60):
-        if embeds and messages:
-            raise ValueError("You can only pass either messages or embeds")
-        self._embeds = embeds
-        self.messages = messages
-        self.timeout = timeout
-        if self._embeds:
-            self.responses = [{"embed": embed.to_dict()} for embed in self._embeds]
-        else:
-            self.responses = [{"content": content} for content in self.messages]
-        self.buttons = {
-            "begin": ["<<", lambda x: 0],
-            "previous": ["<", lambda x: max(0, x - 1)],
-            "stop": ["X", lambda x: None],
-            "next": [">", lambda x: min(len(self.responses) - 1, x + 1)],
-            "end": [">>", lambda x: len(self.responses) - 1]
-        }
-        for response in self.responses:
-            response.update({"allowed_mentions": discord.AllowedMentions.none().to_dict(),
-                             "components": [{"type": 1, "components": [
-                                 {"type": 2, "label": v[0], "custom_id": k, "style": 4 if k == "stop" else 2}
-                                 for k, v in self.buttons.items()
-                             ]}]})
-        self._bot: commands.Bot = _ctx.bot
-        self._http = self._bot.http
-        self.counter = 0
-        self.ctx = _ctx
+        if not messages and not embeds:
+            raise ValueError("You must pass messages or embeds")
+        if messages and embeds:
+            raise ValueError("You must pass only one of messages or embeds")
+        self._ctx = _ctx
+        self._pages = messages or embeds
+        self._timeout = timeout
+        self.paginator = PaginatorView(messages=self._pages, user=self._ctx.author, timeout=self._timeout)
+        self._timed_out = False
 
-    async def run(self):
-        msg = (await self._http.request(
-            ButtonPaginator._CustomRoute("POST", f"/channels/{self.ctx.channel.id}/messages"),
-            json=self.responses[0]
-        ))["id"]
+    @property
+    def timed_out(self) -> bool:
+        return self._timed_out
 
-        while True:
-            try:
-                event = await self._bot.wait_for("socket_response", timeout=self.timeout,
-                                                 check=lambda e: (
-                                                         e["t"] == "INTERACTION_CREATE" and
-                                                         e["d"].get("message", {}).get("id", None) == msg and
-                                                         "custom_id" in e["d"].get("data", {})
-                                                 ))
-                await self._http.request(
-                    ButtonPaginator._CustomRoute("POST",
-                                                 f"/interactions/{event['d']['id']}/{event['d']['token']}/callback"),
-                    json={"type": 6})
-                if event["d"].get("member", {}).get("user", {}).get("id", None) != str(self.ctx.author.id):
-                    continue
-                button_clicked = event["d"]["data"]["custom_id"]
-            except asyncio.TimeoutError:
-                button_clicked = "stop"
-            message_edit = ButtonPaginator._CustomRoute("PATCH", f"/channels/{self.ctx.channel.id}/messages/{msg}")
+    @property
+    def current(self) -> int:
+        return self.paginator.current_index
 
-            if button_clicked != "stop":
-                self.counter = self.buttons[button_clicked][1](self.counter)
+    async def run(self) -> None:
+        """
+        Run the paginator
+        :rtype: bool
+        :return: True if paginator exists normally, and False if it timed out
+        """
+        message = await self._ctx.send(
+            self.paginator.current if not self.paginator.is_embeds else None,
+            embed=self.paginator.current if self.paginator.is_embeds else None,
+            view=self.paginator
+        )
+        self._timed_out = await self.paginator.wait()
 
-            current_response = self.responses[self.counter]
-
-            if button_clicked == "stop":
-                current_response["components"] = {}
-
-            await self._http.request(message_edit, json=current_response)
-
-            if button_clicked == "stop":
-                break
+        await message.edit(
+            content=self.paginator.current if not self.paginator.is_embeds else None,
+            embed=self.paginator.current if self.paginator.is_embeds else None,
+            view=self.paginator
+        )
 
     @classmethod
     def from_content(cls, ctx: commands.Context, content: str, *, timeout=60, max_chars=2000, min_chars=1500,
@@ -124,3 +93,83 @@ class ButtonPaginator:
                 current_page_plus_one=n + 1,
                 total_pages=len(content_list))
             for n, page in enumerate(content_list)], timeout=timeout)
+
+
+class PaginatorView(ui.View):
+    def __init__(self, messages: Union[List[str], List[discord.Embed]], user: discord.Member, *args, **kwargs):
+        super(PaginatorView, self).__init__(*args, **kwargs)
+        self.is_embeds = isinstance(messages[0], discord.Embed)
+        self.messages = messages
+        self._current = 0
+        self._user = user.id
+        self._event = asyncio.Event()
+
+    @property
+    def current(self) -> Union[str, discord.Embed]:
+        return self.messages[self._current]
+
+    @property
+    def current_index(self) -> int:
+        return self._current
+
+    @ui.button(label="<<", style=discord.ButtonStyle.secondary)
+    async def _first(self, button: ui.Button, interaction: discord.Interaction):
+        if interaction.user.id != self._user:
+            return
+        self._current = 0
+        await self._refresh(interaction.message)
+
+    @ui.button(label="<", style=discord.ButtonStyle.secondary)
+    async def _previous(self, button: ui.Button, interaction: discord.Interaction):
+        if interaction.user.id != self._user:
+            return
+        self._current = max(self._current - 1, 0)
+        await self._refresh(interaction.message)
+
+    @ui.button(label="x", style=discord.ButtonStyle.danger)
+    async def _stop(self, button: ui.Button, interaction: discord.Interaction):
+        if interaction.user.id != self._user:
+            return
+        self._stop.disabled = True
+        self._next.disabled = True
+        self._last.disabled = True
+        self._first.disabled = True
+        self._previous.disabled = True
+        await interaction.message.edit(
+            content=self.messages[self._current] if not self.is_embeds else None,
+            embed=self.messages[self._current] if self.is_embeds else None,
+            view=self
+        )
+        self.stop()
+
+    async def on_timeout(self) -> None:
+        self._stop.disabled = True
+        self._next.disabled = True
+        self._last.disabled = True
+        self._first.disabled = True
+        self._previous.disabled = True
+
+    @ui.button(label=">", style=discord.ButtonStyle.secondary)
+    async def _next(self, button: ui.Button, interaction: discord.Interaction):
+        if interaction.user.id != self._user:
+            return
+        self._current = min(self._current + 1, len(self.messages) + 1)
+        await self._refresh(interaction.message)
+
+    @ui.button(label=">>", style=discord.ButtonStyle.secondary)
+    async def _last(self, button: ui.Button, interaction: discord.Interaction):
+        if interaction.user.id != self._user:
+            return
+        self._current = len(self.messages) - 1
+        await self._refresh(interaction.message)
+
+    async def _refresh(self, message: discord.Message):
+        self._previous.disabled = self._current == 0
+        self._first.disabled = self._current == 0
+        self._next.disabled = self._current == len(self.messages) - 1
+        self._last.disabled = self._current == len(self.messages) - 1
+        await message.edit(
+            content=self.messages[self._current] if not self.is_embeds else None,
+            embed=self.messages[self._current] if self.is_embeds else None,
+            view=self
+        )

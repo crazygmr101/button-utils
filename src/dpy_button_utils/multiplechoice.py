@@ -1,15 +1,13 @@
 import asyncio
-from typing import List
 
 import discord
 from discord.ext import commands
-from discord.http import Route
+
 from .models import ActionRow, ButtonStyle, Button, InteractionComponent
+from .utils import _CustomRoute
 
 
 class ButtonMultipleChoice:
-    class _CustomRoute(Route):
-        BASE = "https://discord.com/api/v9"
 
     def __init__(self, ctx: commands.Context, content: str, *components: InteractionComponent,
                  timeout: int = 60):
@@ -31,7 +29,7 @@ class ButtonMultipleChoice:
     async def run(self) -> Button:
         # send the original message
         msg = (await self._http.request(
-            ButtonMultipleChoice._CustomRoute("POST", f"/channels/{self.ctx.channel.id}/messages"),
+            _CustomRoute("POST", f"/channels/{self.ctx.channel.id}/messages"),
             json={
                 "content": self.content,
                 "components": [component.to_dict() for component in self.components],
@@ -39,7 +37,7 @@ class ButtonMultipleChoice:
             }
         ))["id"]
 
-        message_edit = ButtonMultipleChoice._CustomRoute("PATCH", f"/channels/{self.ctx.channel.id}/messages/{msg}")
+        message_edit = _CustomRoute("PATCH", f"/channels/{self.ctx.channel.id}/messages/{msg}")
 
         while True:
             try:
@@ -49,7 +47,7 @@ class ButtonMultipleChoice:
                                                          e["d"].get("message", {}).get("id", None) == msg and
                                                          "custom_id" in e["d"].get("data", {})
                                                  ))
-                await self._http.request(ButtonMultipleChoice._CustomRoute(
+                await self._http.request(_CustomRoute(
                     "POST",
                     f"/interactions/{event['d']['id']}/{event['d']['token']}/callback"),
                     json={"type": 6})

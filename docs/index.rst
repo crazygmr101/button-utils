@@ -19,5 +19,5 @@ Indices and tables
 * :ref:`modindex`
 * :ref:`search`
 
-.. automodule:: dpy_button_utils.confirmation
+.. automodule:: dpy_button_utils
 
